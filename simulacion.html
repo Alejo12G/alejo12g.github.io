@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Topología Interactiva: Teoremas Mágicos</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #050505;
+            --primary: #66fcf1;
+            --secondary: #45a29e;
+            --text-light: #ffffff;
+            --accent: #ff4b4b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-light);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .view {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .view.active {
+            display: block;
+            opacity: 1;
+        }
+
+        .canvas-container {
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, #111a22 0%, #050505 100%);
+        }
+
+        .nav {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            display: flex;
+            gap: 10px;
+            background: rgba(11, 12, 16, 0.7);
+            padding: 8px;
+            border-radius: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(102, 252, 241, 0.2);
+        }
+
+        .nav button {
+            background: transparent;
+            border: none;
+            color: rgba(255, 255, 255, 0.5);
+            padding: 10px 24px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .nav button.active {
+            background: var(--primary);
+            color: var(--bg-color);
+            box-shadow: 0 0 15px rgba(102, 252, 241, 0.4);
+        }
+
+        .action-btn {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 18px 40px;
+            font-size: 1.3rem;
+            background: rgba(102, 252, 241, 0.05);
+            border: 2px solid var(--primary);
+            color: var(--primary);
+            border-radius: 40px;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: 800;
+            letter-spacing: 2px;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .action-btn:hover {
+            background: var(--primary);
+            color: var(--bg-color);
+            box-shadow: 0 0 30px rgba(102, 252, 241, 0.6);
+            transform: translateX(-50%) scale(1.05);
+        }
+
+        .fp-indicator {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: var(--accent);
+            font-weight: bold;
+            font-size: 1.5rem;
+            text-shadow: 0 0 15px rgba(255,75,75,0.8);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+            z-index: 15;
+            text-align: center;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 30px;
+            border-radius: 20px;
+            border: 1px solid var(--accent);
+        }
+        
+        .fp-indicator.visible {
+            opacity: 1;
+        }
+        
+        /* Instrucciones visuales para interactuar con 3D */
+        .interaction-hint {
+            position: absolute;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.4);
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Navegación Superior -->
+    <div class="nav">
+        <button id="nav-1" class="active">1. Bola Peluda</button>
+        <button id="nav-2">2. Punto Fijo</button>
+    </div>
+
+    <!-- VIEW 1: HAIRY BALL -->
+    <div id="view-1" class="view active">
+        <div id="hairy-ball-container" class="canvas-container"></div>
+        <div class="interaction-hint">Puedes rotar la escena con el ratón</div>
+        <button class="action-btn" id="btn-animate-comb">INICIAR SIMULACIÓN</button>
+    </div>
+
+    <!-- VIEW 2: BROUWER FIXED POINT (3D) -->
+    <div id="view-2" class="view">
+        <div id="brouwer-container" class="canvas-container"></div>
+        <div id="fp-text" class="fp-indicator">
+            ¡PUNTO FIJO ENCONTRADO! (Línea Roja)
+        </div>
+        <div class="interaction-hint">Arrastra para explorar el mapa en 3D</div>
+        <button class="action-btn" id="btn-random-map">ARRUGAR Y LANZAR MAPA</button>
+    </div>
+
+    <script>
+        // ==========================================
+        // NAVIGATION LOGIC
+        // ==========================================
+        const nav1 = document.getElementById('nav-1');
+        const nav2 = document.getElementById('nav-2');
+        const view1 = document.getElementById('view-1');
+        const view2 = document.getElementById('view-2');
+
+        nav1.addEventListener('click', () => {
+            nav1.classList.add('active');
+            nav2.classList.remove('active');
+            view1.classList.add('active');
+            view2.classList.remove('active');
+        });
+
+        nav2.addEventListener('click', () => {
+            nav2.classList.add('active');
+            nav1.classList.remove('active');
+            view2.classList.add('active');
+            view1.classList.remove('active');
+            resizeBrouwer(); // Fix aspect ratio on load
+        });
+
+        // Easing function
+        function easeInOutCubic(t) {
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
+        // ==========================================
+        // 1. HAIRY BALL THEOREM (THREE.JS)
+        // ==========================================
+        const hbContainer = document.getElementById('hairy-ball-container');
+        
+        const sceneHB = new THREE.Scene();
+        const cameraHB = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        cameraHB.position.set(0, 0, 5); // Initial position at equator
+        
+        const rendererHB = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        rendererHB.setSize(window.innerWidth, window.innerHeight);
+        rendererHB.setPixelRatio(window.devicePixelRatio);
+        hbContainer.appendChild(rendererHB.domElement);
+
+        const controlsHB = new THREE.OrbitControls(cameraHB, rendererHB.domElement);
+        controlsHB.enableDamping = true;
+        controlsHB.autoRotate = true;
+        controlsHB.autoRotateSpeed = 0.5; // Rotación mucho más suave
+        controlsHB.enablePan = false;
+
+        // Sphere
+        const radius = 1.5;
+        const sphereGeo = new THREE.SphereGeometry(radius, 64, 64);
+        const sphereMat = new THREE.MeshPhongMaterial({ 
+            color: 0x1f2833, 
+            emissive: 0x050505,
+            shininess: 30,
+            transparent: true,
+            opacity: 0.95
+        });
+        const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+        sceneHB.add(sphere);
+
+        // Lights
+        const light1 = new THREE.PointLight(0x66fcf1, 1.2, 100);
+        light1.position.set(5, 5, 5);
+        sceneHB.add(light1);
+        
+        const light2 = new THREE.PointLight(0xff4b4b, 1, 100);
+        light2.position.set(-5, -5, -5);
+        sceneHB.add(light2);
+
+        sceneHB.add(new THREE.AmbientLight(0x404040));
+
+        // Hairs
+        const numHairs = 2000; // Menos pelos para verlos más definidos
+        const hairsGeo = new THREE.BufferGeometry();
+        const positions = new Float32Array(numHairs * 2 * 3);
+        const colors = new Float32Array(numHairs * 2 * 3);
+
+        const basePoints = [];
+        for(let i=0; i<numHairs; i++) {
+            const phi = Math.acos( -1 + ( 2 * i ) / numHairs );
+            const theta = Math.sqrt( numHairs * Math.PI ) * phi;
+            const x = radius * Math.cos(theta) * Math.sin(phi);
+            const y = radius * Math.cos(phi);
+            const z = radius * Math.sin(theta) * Math.sin(phi);
+            basePoints.push(new THREE.Vector3(x, y, z));
+        }
+
+        const K = new THREE.Vector3(0, 1, 0); // Combing direction (North pole is cowlick)
+        let combFactor = 0.0;
+        let hairLength = 0.4; // Pelos más largos
+
+        function updateHairs() {
+            let idx = 0;
+            const hairColor = new THREE.Color(0x66fcf1);
+            const rootColor = new THREE.Color(0x45a29e);
+            const redColor = new THREE.Color(0xff4b4b);
+
+            for(let i=0; i<numHairs; i++) {
+                const p = basePoints[i];
+                const normal = p.clone().normalize();
+                
+                const dot = K.dot(normal);
+                const tangent = K.clone().sub(normal.clone().multiplyScalar(dot));
+                
+                // Vórtice topológico: Producto cruz entre normal y el eje Y (K)
+                const vortex = new THREE.Vector3().crossVectors(normal, K);
+                
+                // Mezclamos el tangente puro con el vórtice. 
+                // Cerca de los polos (normal.y cercano a 1 o -1), el remolino es más pronunciado.
+                const mixFactor = Math.abs(normal.y); 
+                const spiralDir = new THREE.Vector3()
+                    .addScaledVector(tangent, 1 - 0.8 * mixFactor)
+                    .addScaledVector(vortex, 1.5 * mixFactor)
+                    .normalize();
+                
+                const dir = normal.clone().lerp(spiralDir, combFactor).normalize();
+                
+                // As combFactor increases, hairs near poles shrink
+                const lengthMod = THREE.MathUtils.lerp(1, tangent.length() * 1.5, combFactor);
+                const finalLength = hairLength * lengthMod;
+
+                const endP = p.clone().add(dir.multiplyScalar(finalLength));
+
+                positions[idx*6] = p.x;
+                positions[idx*6+1] = p.y;
+                positions[idx*6+2] = p.z;
+                rootColor.toArray(colors, idx*6);
+
+                positions[idx*6+3] = endP.x;
+                positions[idx*6+4] = endP.y;
+                positions[idx*6+5] = endP.z;
+                
+                // Highlight poles
+                if (combFactor > 0.6 && tangent.length() < 0.25) {
+                    // Interpolate towards red as it gets closer to pole
+                    const mix = (0.25 - tangent.length()) / 0.25 * combFactor;
+                    const mixedCol = hairColor.clone().lerp(redColor, mix);
+                    mixedCol.toArray(colors, idx*6+3);
+                } else {
+                    hairColor.toArray(colors, idx*6+3);
+                }
+
+                idx++;
+            }
+            hairsGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            hairsGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            hairsGeo.attributes.position.needsUpdate = true;
+            hairsGeo.attributes.color.needsUpdate = true;
+        }
+
+        updateHairs();
+
+        const hairsMat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2, transparent: false }); // Opacidad al 100%
+        const hairs = new THREE.LineSegments(hairsGeo, hairsMat);
+        sceneHB.add(hairs);
+
+        // Poles indicators
+        const poleGeo = new THREE.SphereGeometry(0.12, 32, 32);
+        const poleMat = new THREE.MeshBasicMaterial({ color: 0xff4b4b, transparent: true, opacity: 0 });
+        const northPole = new THREE.Mesh(poleGeo, poleMat);
+        northPole.position.set(0, radius, 0);
+        const southPole = new THREE.Mesh(poleGeo, poleMat);
+        southPole.position.set(0, -radius, 0);
+        sceneHB.add(northPole);
+        sceneHB.add(southPole);
+
+        // Animation state variables
+        let isCombed = false;
+        let isAnimatingCamera = false;
+        let cameraAnimProgress = 0;
+        let initialCameraSpherical = new THREE.Spherical();
+        let targetCameraSpherical = new THREE.Spherical();
+
+        function animateHB() {
+            requestAnimationFrame(animateHB);
+            
+            if(!isAnimatingCamera) {
+                controlsHB.update(); // Let user/auto-rotate control if not animating
+            }
+
+            const poleOp = Math.pow(combFactor, 3) * (0.6 + 0.4 * Math.sin(Date.now() * 0.005));
+            northPole.material.opacity = poleOp;
+            southPole.material.opacity = poleOp;
+
+            rendererHB.render(sceneHB, cameraHB);
+        }
+        animateHB();
+
+        const btnAnimateComb = document.getElementById('btn-animate-comb');
+        
+        btnAnimateComb.addEventListener('click', () => {
+            let start = combFactor;
+            let target = isCombed ? 0 : 1;
+            let duration = 8000; // MUCH slower (8 seconds)
+            let startTime = performance.now();
+
+            btnAnimateComb.innerText = isCombed ? "INICIAR SIMULACIÓN" : "DESORDENAR PELO";
+            isCombed = !isCombed;
+
+            // Camera animation setup
+            controlsHB.autoRotate = false; // Stop auto rotate to take control
+            isAnimatingCamera = true;
+            initialCameraSpherical.setFromVector3(cameraHB.position);
+            
+            targetCameraSpherical.copy(initialCameraSpherical);
+            if(isCombed) {
+                // Look at North pole from slightly above
+                targetCameraSpherical.phi = Math.PI / 6; // Ángulo más alto para ver el polo sin marear
+                // Un ligero giro en lugar de una vuelta completa
+                targetCameraSpherical.theta += Math.PI / 4; 
+            } else {
+                // Back to equator
+                targetCameraSpherical.phi = Math.PI / 2;
+                targetCameraSpherical.theta += Math.PI / 4;
+                controlsHB.autoRotate = true; // Resume after uncombing
+            }
+
+            function animComb(time) {
+                let t = (time - startTime) / duration;
+                if(t > 1) t = 1;
+                
+                let easeT = easeInOutCubic(t);
+                combFactor = start + (target - start) * easeT;
+                updateHairs();
+
+                // Animate camera position smoothly
+                const currentPhi = THREE.MathUtils.lerp(initialCameraSpherical.phi, targetCameraSpherical.phi, easeT);
+                const currentTheta = THREE.MathUtils.lerp(initialCameraSpherical.theta, targetCameraSpherical.theta, easeT);
+                const currentRadius = THREE.MathUtils.lerp(initialCameraSpherical.radius, targetCameraSpherical.radius, easeT);
+                
+                cameraHB.position.setFromSphericalCoords(currentRadius, currentPhi, currentTheta);
+                cameraHB.lookAt(0,0,0);
+
+                if(t < 1) {
+                    requestAnimationFrame(animComb);
+                } else {
+                    isAnimatingCamera = false;
+                }
+            }
+            requestAnimationFrame(animComb);
+        });
+
+
+        // ==========================================
+        // 2. BROUWER FIXED POINT (THREE.JS 3D)
+        // ==========================================
+        const bContainer = document.getElementById('brouwer-container');
+        
+        const sceneB = new THREE.Scene();
+        const cameraB = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+        // Position camera to look down at the table at an angle
+        cameraB.position.set(0, -6, 8); 
+        cameraB.lookAt(0, 0, 0);
+        
+        const rendererB = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        rendererB.setSize(window.innerWidth, window.innerHeight);
+        rendererB.setPixelRatio(window.devicePixelRatio);
+        bContainer.appendChild(rendererB.domElement);
+
+        const controlsB = new THREE.OrbitControls(cameraB, rendererB.domElement);
+        controlsB.enableDamping = true;
+        controlsB.maxPolarAngle = Math.PI / 2 - 0.1; // Don't go below table
+
+        // Lights
+        sceneB.add(new THREE.AmbientLight(0x202020));
+        const bLight = new THREE.PointLight(0xffffff, 1, 100);
+        bLight.position.set(0, 0, 10);
+        sceneB.add(bLight);
+
+        // Big Map (The Table)
+        const mapSize = 10;
+        const gridHelper = new THREE.GridHelper(mapSize, 20, 0x45a29e, 0x1f2833);
+        gridHelper.rotation.x = Math.PI / 2;
+        sceneB.add(gridHelper);
+
+        const tableGeo = new THREE.PlaneGeometry(mapSize, mapSize);
+        const tableMat = new THREE.MeshBasicMaterial({ color: 0x050505, depthWrite: false });
+        const tableMesh = new THREE.Mesh(tableGeo, tableMat);
+        tableMesh.position.z = -0.01;
+        sceneB.add(tableMesh);
+
+        // Outline for big map
+        const edges = new THREE.EdgesGeometry(tableGeo);
+        const outlineMap = new THREE.LineSegments(edges, new THREE.LineBasicMaterial( { color: 0x66fcf1 } ) );
+        sceneB.add(outlineMap);
+
+        // Small Crumpled Map
+        const detailGeo = new THREE.PlaneGeometry(mapSize, mapSize, 30, 30);
+        
+        // Custom shader material to make it look cool and "holographic"
+        const smallMapMat = new THREE.MeshPhongMaterial({ 
+            color: 0x66fcf1, 
+            wireframe: true, 
+            transparent: true, 
+            opacity: 0.6,
+            side: THREE.DoubleSide
+        });
+        
+        const crumpledMap = new THREE.Mesh(detailGeo, smallMapMat);
+        crumpledMap.position.z = 0.05; // Slightly above
+        sceneB.add(crumpledMap);
+
+        // Base vertices for crumpling
+        const baseVertices = [];
+        const posAttr = detailGeo.attributes.position;
+        for(let i=0; i<posAttr.count; i++) {
+            baseVertices.push(new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i)));
+        }
+
+        // Fixed point indicator (Laser + Glowing spheres)
+        const laserMat = new THREE.LineBasicMaterial({ color: 0xff4b4b, linewidth: 3 });
+        const laserGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,2)]);
+        const laserLine = new THREE.Line(laserGeo, laserMat);
+        laserLine.visible = false;
+        sceneB.add(laserLine);
+
+        // Marker on the table (A flat ring)
+        const fpTableGeo = new THREE.RingGeometry(0.15, 0.25, 32);
+        const fpTableMat = new THREE.MeshBasicMaterial({ color: 0xff4b4b, side: THREE.DoubleSide });
+        const fpTableMarker = new THREE.Mesh(fpTableGeo, fpTableMat);
+        fpTableMarker.visible = false;
+        fpTableMarker.position.z = 0.02; // Just above the table
+        sceneB.add(fpTableMarker);
+
+        // Marker on the crumpled map (A solid sphere)
+        const fpCrumpledGeo = new THREE.SphereGeometry(0.15, 16, 16);
+        const fpCrumpledMat = new THREE.MeshBasicMaterial({ color: 0xff4b4b });
+        const fpCrumpledMarker = new THREE.Mesh(fpCrumpledGeo, fpCrumpledMat);
+        fpCrumpledMarker.visible = false;
+        fpCrumpledMarker.position.z = 0.5; // Hover slightly above the crumples
+        crumpledMap.add(fpCrumpledMarker); // Add as child so it moves with the map!
+
+        // State
+        let mapScale = 1.0;
+        let mapRot = 0.0;
+        let mapTx = 0;
+        let mapTy = 0;
+        let crumpleAmount = 0.0;
+        
+        // Continuous wave function for realistic paper crumpling
+        const noiseOffsets = [];
+        for(let i=0; i<posAttr.count; i++) {
+            const x = posAttr.getX(i);
+            const y = posAttr.getY(i);
+            
+            // Superposición de ondas matemáticas para colinas y valles suaves
+            let z = 0;
+            z += Math.sin(x * 1.0) * Math.cos(y * 1.2) * 1.0;
+            z += Math.sin(x * 2.5 + 1.5) * Math.cos(y * 2.0 + 0.8) * 0.5;
+            z += Math.sin(x * 4.0 - 2.0) * Math.sin(y * 3.5 + 1.0) * 0.25;
+            
+            // Normalizamos aproximadamente al rango [-1, 1]
+            z = z / 1.75;
+            
+            noiseOffsets.push(z);
+        }
+
+        function calculateBrouwerFP() {
+            if (mapScale >= 0.99) return null;
+            
+            const S = mapScale;
+            const theta = mapRot;
+            
+            const a11 = 1 - S * Math.cos(theta);
+            const a12 = S * Math.sin(theta);
+            const a21 = -S * Math.sin(theta);
+            const a22 = 1 - S * Math.cos(theta);
+            
+            const det = a11 * a22 - a12 * a21;
+            if (det === 0) return null;
+
+            const inv11 = a22 / det;
+            const inv12 = -a12 / det;
+            const inv21 = -a21 / det;
+            const inv22 = a11 / det;
+
+            const fx = inv11 * mapTx + inv12 * mapTy;
+            const fy = inv21 * mapTx + inv22 * mapTy;
+
+            return new THREE.Vector3(fx, fy, 0);
+        }
+
+        function updateCrumpledMap() {
+            crumpledMap.scale.set(mapScale, mapScale, 1);
+            crumpledMap.rotation.z = mapRot;
+            crumpledMap.position.set(mapTx, mapTy, 0.5 * crumpleAmount + 0.05);
+
+            // Apply crumple effect to vertices Z
+            for(let i=0; i<posAttr.count; i++) {
+                const z = noiseOffsets[i] * 0.8 * crumpleAmount;
+                posAttr.setZ(i, z);
+            }
+            posAttr.needsUpdate = true;
+            
+            // If laser is visible, update its position so it follows the sphere
+            if (laserLine.visible) {
+                // Get the world position of the crumpled marker
+                const worldPos = new THREE.Vector3();
+                fpCrumpledMarker.getWorldPosition(worldPos);
+                
+                // Draw laser from the crumpled marker straight down to the table marker
+                laserLine.geometry.setFromPoints([
+                    worldPos,
+                    fpTableMarker.position
+                ]);
+            }
+        }
+
+        function animateB() {
+            requestAnimationFrame(animateB);
+            controlsB.update();
+            rendererB.render(sceneB, cameraB);
+        }
+        animateB();
+
+        const btnRandomMap = document.getElementById('btn-random-map');
+        const fpText = document.getElementById('fp-text');
+        let isCrumpled = false;
+
+        btnRandomMap.addEventListener('click', () => {
+            let startS = mapScale, startR = mapRot, startTx = mapTx, startTy = mapTy, startC = crumpleAmount;
+            
+            let targetS, targetR, targetTx, targetTy, targetC;
+            
+            if (isCrumpled) {
+                targetS = 1.0; targetR = 0; targetTx = 0; targetTy = 0; targetC = 0.0;
+                fpText.classList.remove('visible');
+                laserLine.visible = false; // Hide laser immediately when restoring
+                // But KEEP the markers visible so the user can see them align!
+                btnRandomMap.innerText = "ARRUGAR Y LANZAR MAPA";
+            } else {
+                targetS = 0.3 + Math.random() * 0.4; 
+                targetR = (Math.random() - 0.5) * Math.PI * 2; 
+                
+                const bounds = (mapSize/2) * (1 - targetS);
+                targetTx = (Math.random() - 0.5) * bounds * 1.5;
+                targetTy = (Math.random() - 0.5) * bounds * 1.5;
+                targetC = 1.0; // Fully crumpled
+                
+                // Hide markers while throwing
+                fpTableMarker.visible = false;
+                fpCrumpledMarker.visible = false;
+                laserLine.visible = false;
+                
+                btnRandomMap.innerText = "RESTAURAR MAPA";
+            }
+            
+            isCrumpled = !isCrumpled;
+            
+            let duration = 2000;
+            let startTime = performance.now();
+
+            function animMap(time) {
+                let t = (time - startTime) / duration;
+                if(t > 1) t = 1;
+                let easeT = easeInOutCubic(t);
+                
+                mapScale = startS + (targetS - startS) * easeT;
+                mapRot = startR + (targetR - startR) * easeT;
+                mapTx = startTx + (targetTx - startTx) * easeT;
+                mapTy = startTy + (targetTy - startTy) * easeT;
+                crumpleAmount = startC + (targetC - startC) * easeT;
+                
+                updateCrumpledMap();
+                
+                if(t < 1) {
+                    requestAnimationFrame(animMap);
+                } else {
+                    if (isCrumpled) {
+                        // Animation finished, calculate fixed point!
+                        const fp = calculateBrouwerFP();
+                        if (fp) {
+                            // Set the marker on the table
+                            fpTableMarker.position.set(fp.x, fp.y, 0.02);
+                            fpTableMarker.visible = true;
+                            
+                            // Set the marker on the crumpled map (local coordinates are the SAME as table coordinates!)
+                            fpCrumpledMarker.position.set(fp.x, fp.y, 0.5); // 0.5 Z to float above crinkles
+                            fpCrumpledMarker.visible = true;
+                            
+                            // Draw the laser
+                            laserLine.visible = true;
+                            updateCrumpledMap(); // Force laser update
+                            
+                            fpText.innerHTML = '¡PUNTO FIJO ENCONTRADO! (Línea Roja)<br><span style="font-size: 0.9rem; color: #fff; font-weight: normal;">Mira cómo las marcas coinciden al restaurar el mapa</span>';
+                            fpText.classList.add('visible');
+                        }
+                    } else {
+                        // Fully restored, they are perfectly aligned.
+                        fpText.innerHTML = '¡MAGIA MATEMÁTICA!<br><span style="font-size: 0.9rem; color: #fff; font-weight: normal;">El punto rojo nunca cambió de lugar.</span>';
+                        fpText.classList.add('visible');
+                    }
+                }
+            }
+            requestAnimationFrame(animMap);
+        });
+
+        // Global Resize Handler
+        function resizeBrouwer() {
+            cameraB.aspect = window.innerWidth / window.innerHeight;
+            cameraB.updateProjectionMatrix();
+            rendererB.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', () => {
+            cameraHB.aspect = window.innerWidth / window.innerHeight;
+            cameraHB.updateProjectionMatrix();
+            rendererHB.setSize(window.innerWidth, window.innerHeight);
+            if(view2.classList.contains('active')) resizeBrouwer();
+        });
+
+    </script>
+</body>
+</html>
